@@ -1,14 +1,13 @@
 checkpoint:
   chkpt_saving_period: 1
-  directory          : experiments/chkpts
+  directory          : ../train/experiments/chkpts
   filename_prefix    : fsdp
   path_chkpt_prev    : null
   pretrain           : null
 dataset:
   batch_size     : 2
   num_workers    : 2
-  path_train     : experiments/datasets/test.json
-  path_eval      : experiments/datasets/test.json
+  path_predict     : test.json
   seg_size       : 20
   server_address : [localhost, 5000]
   transforms:
@@ -37,7 +36,7 @@ dist:
   uses_unique_world_seed: true
   dtype                 : float16
 logging:
-  directory      : experiments/logs
+  directory      : predictions/logs
   filename_prefix: fsdp
 loss:
   grad_accum_steps: 10
