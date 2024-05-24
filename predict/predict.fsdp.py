@@ -75,7 +75,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 import torch.distributed as dist
 
 # -- Debug
-torch.autograd.set_detect_anomaly(True)    # [WARNING] Making it True may throw errors when using bfloat16
+torch.autograd.set_detect_anomaly(False)    # [WARNING] Making it True may throw errors when using bfloat16
 
 # -- Reporting specific imports
 import colorama
@@ -145,6 +145,8 @@ misc_config = config.get("misc")
 num_gpus             = misc_config.get("num_gpus")
 compiles_model       = misc_config.get("compiles_model")
 data_dump_on         = misc_config.get("data_dump_on", False)
+
+save_filepath = config.get("predictions").get("save_filepath")
 
 # ----------------------------------------------------------------------- #
 #  MISC FEATURES
@@ -366,13 +368,17 @@ if uses_dist:
 
     dist.barrier()
 
-print("Loaded model")
+print("*************** Loaded model *****************")
 
+dataset.reset()
+dataset.set_start_idx(0)
 dataloader = torch.utils.data.DataLoader(dataset, collate_fn=custom_collate)
 model.eval()
 
 for event in dataloader:
-    input = event.to(device, non_blocking = True)
-    output = model(input)
-    print(output)
-
+    if event is not None:
+        input = event.to(device, non_blocking = True)
+        output = model(input)
+        image_data = output.logits.to("cpu")
+        path_save = os.path.join(save_filepath, f"example_data") #TODO: label with event name
+        torch.save(image_data, path_save)

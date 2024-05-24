@@ -46,3 +46,5 @@ misc:
   data_dump_on        : false
 model:
   name: 'facebook/vit-mae-base'
+predictions:
+  save_filepath : predictions/outputs
