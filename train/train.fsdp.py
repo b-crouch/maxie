@@ -75,7 +75,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 import torch.distributed as dist
 
 # -- Debug
-torch.autograd.set_detect_anomaly(True)    # [WARNING] Making it True may throw errors when using bfloat16
+torch.autograd.set_detect_anomaly(False)    # [WARNING] Making it True may throw errors when using bfloat16
 
 # -- Reporting specific imports
 import colorama
