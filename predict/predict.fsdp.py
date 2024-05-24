@@ -274,7 +274,7 @@ transforms = (
     ## DownscaleLocalMean(factors = downscale_factors),
     ## RandomPatch(num_patch = num_patch, H_patch = size_patch, W_patch = size_patch, var_H_patch = var_size_patch, var_W_patch = var_size_patch, returns_mask = False),
     ## RandomRotate(angle_max),
-    RandomShift(frac_y_shift_max=frac_shift_max, frac_x_shift_max=frac_shift_max),
+    ## RandomShift(frac_y_shift_max=frac_shift_max, frac_x_shift_max=frac_shift_max),
     Patchify(patch_size, stride),
 )
 
@@ -375,10 +375,17 @@ dataset.set_start_idx(0)
 dataloader = torch.utils.data.DataLoader(dataset, collate_fn=custom_collate)
 model.eval()
 
-for event in dataloader:
-    if event is not None:
-        input = event.to(device, non_blocking = True)
+for i, tensor in enumerate(dataloader):
+    if tensor is not None:
+        input = tensor.to(device, non_blocking = True)
         output = model(input)
-        image_data = output.logits.to("cpu")
-        path_save = os.path.join(save_filepath, f"example_data") #TODO: label with event name
-        torch.save(image_data, path_save)
+        image_tensor = output.logits.to("cpu")
+        detector = dataset.get_detector(i)
+        # Assume we only pass in a single event for image generation, so B = 1
+        N, C, H, W = image_tensor.shape
+        image_tensor = image_tensor.view(1, N, C, H, W)
+        # Apply inverse transforms to recover image
+        for trans in transforms[::-1]:
+             image_tensor = trans.invert(image_tensor, detector_name=detector)
+        path_save = os.path.join(save_filepath, f"example_data.pt") #TODO: label with event name
+        torch.save(image_tensor, path_save)

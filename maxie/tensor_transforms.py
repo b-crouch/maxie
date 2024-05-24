@@ -224,6 +224,22 @@ class Patchify:
         batch_patches = batch_patches.permute(0, 4, 1, 2, 3).contiguous()
 
         return batch_patches
+    
+    def invert(self, batch_img, **kwargs):
+        batch_patches = batch_patches.permute(0, 2, 3, 4, 1)
+        B, C, patch_size, patch_size, num_patches = batch_patches.shape
+        batch_patches = batch_patches.view(B, C*patch_size*patch_size, num_patches)
+
+        patch_size = self.patch_size
+        stride     = self.stride
+
+        # fold(unfold(input)) == divisor * input, by https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html#torch.nn.Unfold
+        batch_img_padded = F.fold(batch_patches,
+                                  kernel_size = (patch_size, patch_size),
+                                  stride=stride)
+        
+        return batch_img_padded # TODO: For completeness, undo padding as well (can be done manually in post-processing for now)
+
 
 class Norm:
     def __init__(self, detector_norm_params):
@@ -233,3 +249,8 @@ class Norm:
         mean, std = self.detector_norm_params[detector_name]["mean"], self.detector_norm_params[detector_name]["std"]
         C = img.shape[-3]
         return normalize(img, [mean]*C, [std]*C)
+    
+    def invert(self, img, detector_name, **kwargs):
+        mean, std = self.detector_norm_params[detector_name]["mean"], self.detector_norm_params[detector_name]["std"]
+        C = img.shape[-3]
+        return normalize(img, [-mean/std]*C, [1/std]*C)
