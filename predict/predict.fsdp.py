@@ -378,7 +378,11 @@ model.eval()
 for i, tensor in enumerate(dataloader):
     if tensor is not None:
         input = tensor.to(device, non_blocking = True)
+        print(f"!!!!!!!!! Input size: {input.shape}")
         output = model(input)
+        path_raw_save = os.path.join(save_filepath, f"example_original_data.pt") #TODO: label with event name
+        torch.save(input, path_raw_save)
+
         image_tensor = output.logits.to("cpu")
         detector = dataset.get_detector(i)
         # Assume we only pass in a single event for image generation, so B = 1
