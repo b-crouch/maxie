@@ -412,8 +412,7 @@ class FullStateDictCheckpoint:
 
         if rank == 0:
             if self.full_state_dict is None:
-                path_scheduler_and_training_checkpoint = os.path.join(path_checkpoint, 'scheduler_and_training.chkpt')
-                self.full_state_dict = torch.load(path_scheduler_and_training_checkpoint, map_location = 'cpu')
+                self.full_state_dict = torch.load(path_checkpoint, map_location = 'cpu')
             model_full_state_dict = self.full_state_dict.get('model_state_dict')
             model.load_state_dict(model_full_state_dict)
 
@@ -431,8 +430,7 @@ class FullStateDictCheckpoint:
         optim_full_state_dict = None
         if rank == 0:
             if self.full_state_dict is None:
-                path_scheduler_and_training_checkpoint = os.path.join(path_checkpoint, 'scheduler_and_training.chkpt')
-                self.full_state_dict = torch.load(path_scheduler_and_training_checkpoint, map_location = 'cpu')
+                self.full_state_dict = torch.load(path_checkpoint, map_location = 'cpu')
             optim_full_state_dict = self.full_state_dict.get('optim_state_dict')
 
         optim_full_state_dict = broadcast_dict(optim_full_state_dict, src = 0, device = device)
@@ -452,8 +450,7 @@ class FullStateDictCheckpoint:
         training_state = None
         if rank == 0:
             if self.full_state_dict is None:
-                path_scheduler_and_training_checkpoint = os.path.join(path_checkpoint, 'scheduler_and_training.chkpt')
-                self.full_state_dict = torch.load(path_scheduler_and_training_checkpoint, map_location = 'cpu')
+                self.full_state_dict = torch.load(path_checkpoint, map_location = 'cpu')
             training_state = self.full_state_dict.get('training_state_dict')
 
         # Scatter the training state to all ranks...
@@ -471,8 +468,7 @@ class FullStateDictCheckpoint:
         lr_scheduler_state_dict = None
         if rank == 0:
             if self.full_state_dict is None:
-                path_scheduler_and_training_checkpoint = os.path.join(path_checkpoint, 'scheduler_and_training.chkpt')
-                self.full_state_dict = torch.load(path_scheduler_and_training_checkpoint, map_location = 'cpu')
+                self.full_state_dict = torch.load(path_checkpoint, map_location = 'cpu')
             lr_scheduler_state_dict = self.full_state_dict.get('scheduler_state_dict')
 
         # Scatter the training state to all ranks...
