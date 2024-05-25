@@ -161,9 +161,9 @@ class IPCDistributedSegmentedDataset(Dataset):
 
         return image_tensor
     
-    def get_detector(self, idx):
+    def get_info(self, idx):
         exp, run, access_mode, detector_name, event = self.current_dataset[idx]
-        return detector_name
+        return exp, run, event, detector_name
 
     def save_checkpoint(self, checkpoint_path, rank):
         if rank == 0:

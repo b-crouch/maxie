@@ -146,7 +146,10 @@ num_gpus             = misc_config.get("num_gpus")
 compiles_model       = misc_config.get("compiles_model")
 data_dump_on         = misc_config.get("data_dump_on", False)
 
+# -- Saving
 save_filepath = config.get("predictions").get("save_filepath")
+save_tensor = config.get("predictions").get("save_tensor")
+save_img = config.get("predictions").get("save_img")
 
 # ----------------------------------------------------------------------- #
 #  MISC FEATURES
@@ -368,8 +371,6 @@ if uses_dist:
 
     dist.barrier()
 
-print("*************** Loaded model *****************")
-
 dataset.reset()
 dataset.set_start_idx(0)
 dataloader = torch.utils.data.DataLoader(dataset, collate_fn=custom_collate)
@@ -380,21 +381,29 @@ for i, tensor in enumerate(dataloader):
         input = tensor.to(device, non_blocking = True)
         output = model(input)
 
+        # Denormalize input and output images
+        exp, run, event, detector_name = dataset.get_info(i)
+        norm = transforms[0]
+
         raw_image = torch.einsum('nchw->nhwc', tensor).cpu()
-        path_raw_save = os.path.join(save_filepath, f"example_original_data.pt") #TODO: label with event name
-        torch.save(raw_image, path_raw_save)
+        raw_image = norm.invert(raw_image, detector_name)
         
-        image_tensor = model.unpatchify(output.logits)
-        image_tensor = torch.einsum('nchw->nhwc', image_tensor).detach().cpu()
-        path_pred_save = os.path.join(save_filepath, f"example_data.pt") #TODO: label with event name
-        torch.save(image_tensor, path_pred_save)
+        generated_image = model.unpatchify(output.logits)
+        generated_image = torch.einsum('nchw->nhwc', generated_image).detach().cpu()
+        generated_image = norm.invert(generated_image, detector_name)
 
         mask = output.mask.detach()
-        mask = mask.unsqueeze(-1).repeat(1, 1, model.config.patch_size**2)
+        mask = mask.unsqueeze(-1).repeat(1, 1, model.patch_size**2)
         mask = model.unpatchify(mask)
         mask = torch.einsum('nchw->nhwc', mask).detach().cpu()
-        path_mask_save = os.path.join(save_filepath, f"example_mask.pt") #TODO: label with event name
-        torch.save(mask, path_mask_save)
+        
+        if save_tensor:
+            path_raw_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_raw_image.pt")
+            torch.save(raw_image, path_raw_save)
+            path_generated_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_gen_image.pt") 
+            torch.save(generated_image, path_generated_save)
+            path_mask_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_mask.pt") 
+            torch.save(mask, path_mask_save)
 
         # detector = dataset.get_detector(i)
         # # Assume we only pass in a single event for image generation, so B = 1

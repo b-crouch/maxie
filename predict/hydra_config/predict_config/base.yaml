@@ -48,3 +48,5 @@ model:
   name: 'facebook/vit-mae-base'
 predictions:
   save_filepath : predictions/outputs
+  save_tensor : true
+  save_img : true
