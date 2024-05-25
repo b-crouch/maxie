@@ -378,18 +378,29 @@ model.eval()
 for i, tensor in enumerate(dataloader):
     if tensor is not None:
         input = tensor.to(device, non_blocking = True)
-        print(f"!!!!!!!!! Input size: {input.shape}")
         output = model(input)
-        path_raw_save = os.path.join(save_filepath, f"example_original_data.pt") #TODO: label with event name
-        torch.save(input, path_raw_save)
 
-        image_tensor = output.logits.to("cpu")
-        detector = dataset.get_detector(i)
-        # Assume we only pass in a single event for image generation, so B = 1
-        N, C, H, W = image_tensor.shape
-        image_tensor = image_tensor.view(1, N, C, H, W)
-        # Apply inverse transforms to recover image
-        for trans in transforms[::-1]:
-             image_tensor = trans.invert(image_tensor, detector_name=detector)
-        path_save = os.path.join(save_filepath, f"example_data.pt") #TODO: label with event name
-        torch.save(image_tensor, path_save)
+        raw_image = torch.einsum('nchw->nhwc', tensor).cpu()
+        path_raw_save = os.path.join(save_filepath, f"example_original_data.pt") #TODO: label with event name
+        torch.save(raw_image, path_raw_save)
+        
+        image_tensor = model.unpatchify(output.logits)
+        image_tensor = torch.einsum('nchw->nhwc', image_tensor).detach().cpu()
+        path_pred_save = os.path.join(save_filepath, f"example_data.pt") #TODO: label with event name
+        torch.save(image_tensor, path_pred_save)
+
+        mask = output.mask.detach()
+        mask = mask.unsqueeze(-1).repeat(1, 1, model.config.patch_size**2)
+        mask = model.unpatchify(mask)
+        mask = torch.einsum('nchw->nhwc', mask).detach().cpu()
+        path_mask_save = os.path.join(save_filepath, f"example_mask.pt") #TODO: label with event name
+        torch.save(mask, path_mask_save)
+
+        # detector = dataset.get_detector(i)
+        # # Assume we only pass in a single event for image generation, so B = 1
+        # N, C, H, W = image_tensor.shape
+        # image_tensor = image_tensor.view(1, N, C, H, W)
+        # # Apply inverse transforms to recover image
+        # for trans in transforms[::-1]:
+        #      image_tensor = trans.invert(image_tensor, detector_name=detector)
+        

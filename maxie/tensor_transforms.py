@@ -256,7 +256,7 @@ class Norm:
         mean, std = self.detector_norm_params[detector_name]["mean"], self.detector_norm_params[detector_name]["std"]
         C = img.shape[-3]
         norm_img = normalize(img, [mean]*C, [std]*C)
-        print(f"!!!!!! Norm, shape now: {norm_img.size}")
+        print(f"!!!!!! Norm, shape now: {norm_img.shape}")
         return norm_img
     
     def invert(self, img, detector_name, **kwargs):
