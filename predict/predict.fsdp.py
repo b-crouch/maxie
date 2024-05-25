@@ -377,7 +377,7 @@ if uses_dist:
 # ----------------------------------------------------------------------- #
 #  VISUALIZATION
 # ----------------------------------------------------------------------- #
-def save_img(patches, filename="image", mask=None):
+def save_img(patches, filename="image", filepath="./", mask=None):
     N, H, W = patches.shape
     ndiv = int(np.sqrt(N))
     ncols = ndiv
@@ -385,7 +385,6 @@ def save_img(patches, filename="image", mask=None):
     fig   = plt.figure(figsize = (18,18))
     gspec = fig.add_gridspec( nrows, ncols, )
     ax_list = [ fig.add_subplot(gspec[i, j], aspect = 1) for i in range(nrows) for j in range(ncols)]
-
     for row in range(nrows):
         for col in range(ncols):
             idx = col + ncols * row
@@ -406,8 +405,7 @@ def save_img(patches, filename="image", mask=None):
         ax.spines['right' ].set_visible(False)
         ax.spines['left'  ].set_visible(False)
         ax.spines['bottom'].set_visible(False)
-
-    fig.savefig(f"{filename}.png")
+    fig.savefig(os.path.join(filepath, f"{filename}.png"))
 
 dataset.reset()
 dataset.set_start_idx(0)
@@ -443,7 +441,7 @@ for i, tensor in enumerate(dataloader):
             path_mask_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_mask.pt") 
             torch.save(mask, path_mask_save)
         if save_img:
-            save_img(raw_image.squeeze(-1), filepath=f"{exp}_r{run}_e{event}_raw_image")
-            save_img(generated_image.squeeze(-1), filepath=f"{exp}_r{run}_e{event}_gen_image")
-            save_img(raw_image.squeeze(-1), mask=mask.squeeze(-1), filepath=f"{exp}_r{run}_e{event}_mask")
+            save_img(raw_image.squeeze(-1), filename=f"{exp}_r{run}_e{event}_raw_image", filepath=save_filepath)
+            save_img(generated_image.squeeze(-1), filename=f"{exp}_r{run}_e{event}_gen_image", filepath=save_filepath)
+            save_img(raw_image.squeeze(-1), mask=mask.squeeze(-1), filename=f"{exp}_r{run}_e{event}_mask", filepath=save_filepath)
         
