@@ -12,6 +12,9 @@ import signal
 import argparse
 import logging
 import traceback
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 
 from functools  import partial
 from contextlib import nullcontext
@@ -371,6 +374,41 @@ if uses_dist:
 
     dist.barrier()
 
+# ----------------------------------------------------------------------- #
+#  VISUALIZATION
+# ----------------------------------------------------------------------- #
+def save_img(patches, filename="image", mask=None):
+    N, H, W = patches.shape
+    ndiv = int(np.sqrt(N))
+    ncols = ndiv
+    nrows = ndiv
+    fig   = plt.figure(figsize = (18,18))
+    gspec = fig.add_gridspec( nrows, ncols, )
+    ax_list = [ fig.add_subplot(gspec[i, j], aspect = 1) for i in range(nrows) for j in range(ncols)]
+
+    for row in range(nrows):
+        for col in range(ncols):
+            idx = col + ncols * row
+            ax = ax_list[idx]
+            data_viz = patches[idx]
+            normalized_viz = (data_viz - torch.mean(data_viz))/torch.std(data_viz)
+            ax.imshow(normalized_viz, vmin = 0, vmax = 4) # Scaling factor chosen heuristically
+            if mask is not None:
+                ax.imshow(mask[idx], cmap=matplotlib.colors.ListedColormap(['none', 'gray']))
+
+    # Apply style...
+    for ax in ax_list:
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # Hide the frame box
+        ax.spines['top'   ].set_visible(False)
+        ax.spines['right' ].set_visible(False)
+        ax.spines['left'  ].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+
+    fig.savefig(f"{filename}.png")
+
 dataset.reset()
 dataset.set_start_idx(0)
 dataloader = torch.utils.data.DataLoader(dataset, collate_fn=custom_collate)
@@ -404,12 +442,8 @@ for i, tensor in enumerate(dataloader):
             torch.save(generated_image, path_generated_save)
             path_mask_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_mask.pt") 
             torch.save(mask, path_mask_save)
-
-        # detector = dataset.get_detector(i)
-        # # Assume we only pass in a single event for image generation, so B = 1
-        # N, C, H, W = image_tensor.shape
-        # image_tensor = image_tensor.view(1, N, C, H, W)
-        # # Apply inverse transforms to recover image
-        # for trans in transforms[::-1]:
-        #      image_tensor = trans.invert(image_tensor, detector_name=detector)
+        if save_img:
+            save_img(raw_image.squeeze(-1), filepath=f"{exp}_r{run}_e{event}_raw_image")
+            save_img(generated_image.squeeze(-1), filepath=f"{exp}_r{run}_e{event}_gen_image")
+            save_img(raw_image.squeeze(-1), mask=mask.squeeze(-1), filepath=f"{exp}_r{run}_e{event}_mask")
         
