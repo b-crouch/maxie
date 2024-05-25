@@ -40,6 +40,13 @@ class AdaptedViTMAEForPreTraining(nn.Module):
         self.config = config
         self.model  = AdaptedViTMAEForPreTraining.adapt_pretrained_model(self.config.model_name)
 
+        vit_mae_model_config_dict = {
+            "facebook/vit-mae-base"  : { "emb_size" : 768,  "win_size" : 16 },
+            "facebook/vit-mae-large" : { "emb_size" : 1024, "win_size" : 16 },
+            "facebook/vit-mae-huge"  : { "emb_size" : 1280, "win_size" : 14 },
+        }
+        self.patch_size = vit_mae_model_config_dict[self.config.model_name]["win_size"]
+
     @staticmethod
     def adapt_pretrained_model(model_name):
         # -- Which pretrained model is in use
@@ -80,8 +87,38 @@ class AdaptedViTMAEForPreTraining(nn.Module):
             out_features = win_size*win_size,
             bias         = True)
         model.decoder.decoder_pred.weight.data = avg_weight_decoder_pred
-
         return model
 
     def forward(self, x):
         return self.model(x)
+    
+    def unpatchify(self, patchified_pixel_values):
+        # Adapted from https://github.com/huggingface/transformers/blob/bdb9106f247fca48a71eb384be25dbbd29b065a8/src/transformers/models/vit_mae/modeling_vit_mae.py#L1023
+        num_channels = 1
+        patch_size = self.patch_size
+        original_image_size = (AdaptedViTMAEForPreTraining.IMG_SIZE, AdaptedViTMAEForPreTraining.IMG_SIZE)
+        original_height, original_width = original_image_size
+        num_patches_h = original_height // patch_size
+        num_patches_w = original_width // patch_size
+        # sanity check
+        if num_patches_h * num_patches_w != patchified_pixel_values.shape[1]:
+            raise ValueError(
+                f"The number of patches in the patchified pixel values {patchified_pixel_values.shape[1]}, does not match the number of patches on original image {num_patches_h}*{num_patches_w}"
+            )
+        maxie_patch_size = patchified_pixel_values.shape[0]
+        patchified_pixel_values = patchified_pixel_values.reshape(
+            maxie_patch_size,
+            num_patches_h,
+            num_patches_w,
+            patch_size,
+            patch_size,
+            num_channels,
+        )
+        patchified_pixel_values = torch.einsum("nhwpqc->nchpwq", patchified_pixel_values)
+        pixel_values = patchified_pixel_values.reshape(
+            maxie_patch_size,
+            num_channels,
+            num_patches_h * patch_size,
+            num_patches_w * patch_size,
+        )
+        return pixel_values
