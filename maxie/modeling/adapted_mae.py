@@ -95,7 +95,7 @@ class AdaptedViTMAEForPreTraining(nn.Module):
     def unpatchify(self, patchified_pixel_values):
         # Adapted from https://github.com/huggingface/transformers/blob/bdb9106f247fca48a71eb384be25dbbd29b065a8/src/transformers/models/vit_mae/modeling_vit_mae.py#L1023
         num_channels = 1
-        patch_size = self.patch_size
+        patch_size = self.config.patch_size
         original_image_size = (AdaptedViTMAEForPreTraining.IMG_SIZE, AdaptedViTMAEForPreTraining.IMG_SIZE)
         original_height, original_width = original_image_size
         num_patches_h = original_height // patch_size
