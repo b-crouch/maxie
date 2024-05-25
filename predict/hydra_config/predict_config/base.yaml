@@ -7,7 +7,7 @@ checkpoint:
 dataset:
   batch_size     : 2
   num_workers    : 2
-  path_predict     : dataset.json
+  path_predict   : dataset.json
   seg_size       : 20
   server_address : [localhost, 5000]
   transforms:
