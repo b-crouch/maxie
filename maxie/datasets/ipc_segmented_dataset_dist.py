@@ -101,74 +101,38 @@ class IPCDistributedSegmentedDataset(Dataset):
     def _init_entry_generator(self):
         if self.debug:
             logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Initializing entry generator.")
+        # Yield entries from input JSON, alternating between experiment runs in a round-robin fashion
         PSANA_ACCESS_MODE = 'idx'
-        entry_gens = []
-        for entry in self.json_entry_list:
-            exp           = entry['exp'          ]
-            run           = entry['run'          ]
-            detector_name = entry['detector_name']
-            events        = entry['events'       ]
-            num_events    = entry['num_events'   ]
-            if events is None:
-                events = range(num_events)
-            entry_gen = self._entry_generator(exp, run, PSANA_ACCESS_MODE, detector_name, events)
-            entry_gens.append(entry_gen)
-
-        return self._round_robin_generator(entry_gens, self.entry_per_cycle)
-
-    def _entry_generator(self, exp, run, psana_access_mode, detector_name, events):
-        for event in events:
-            yield (exp, run, psana_access_mode, detector_name, event)
-
-    def _round_robin_generator(self, entry_gens, entry_per_cycle):
-        """
-        Go through up to certain number of examples for each exp and
-        then move on to the next exp. Then, repeat this cycle until all
-        generators have been exhausted.
-        """
-        while len(entry_gens):
-            for entry_gen in entry_gens:
-                for _ in range(entry_per_cycle):
-                    try:
-                        yield next(entry_gen)
-                    except StopIteration:
-                        entry_gens.remove(entry_gen)
-                        break
-    # def _init_entry_generator(self):
-    #     if self.debug:
-    #         logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Initializing entry generator.")
-    #     # Yield entries from input JSON, alternating between experiment runs in a round-robin fashion
-    #     PSANA_ACCESS_MODE = 'idx'
         
-    #     # Store the most recently accessed event for each run
-    #     for entry_idx, entry in enumerate(self.json_entry_list):
-    #         entry["idx"] = entry_idx
-    #         entry["curr_event_idx"] = 0
-    #         if entry["events"] is None:
-    #             entry["events"] = range(entry["num_events"])
-    #         elif len(entry["events"]) != entry["num_events"]:
-    #             # Some experiment runs have fewer recorded events than documented
-    #             entry["num_events"] = len(entry["events"])
-    #     # Store a unique identifier for each experiment run
-    #     exp_run_ids = list(range(len(self.json_entry_list)))
+        # Store the most recently accessed event for each run
+        for entry_idx, entry in enumerate(self.json_entry_list):
+            entry["idx"] = entry_idx
+            entry["curr_event_idx"] = 0
+            if entry["events"] is None:
+                entry["events"] = range(entry["num_events"])
+            elif len(entry["events"]) != entry["num_events"]:
+                # Some experiment runs have fewer recorded events than documented
+                entry["num_events"] = len(entry["events"])
+        # Store a unique identifier for each experiment run
+        exp_run_ids = list(range(len(self.json_entry_list)))
         
-    #     # Begin round robin schedule
-    #     while len(exp_run_ids) > 0:
-    #         # Randomly select the next experiment run to avoid cyclic patterns in data (could alternatively select determistically as LIFO queue)
-    #         curr_exp_run_idx = exp_run_ids.pop(np.random.randint(0, len(exp_run_ids)))
-    #         curr_exp_run = self.json_entry_list[curr_exp_run_idx]
-    #         if curr_exp_run["curr_event_idx"] < curr_exp_run["num_events"]:
-    #             # If current experiment run has unyielded events remaining, yield a random number of its events
-    #             exp = curr_exp_run["exp"]
-    #             run = curr_exp_run["run"]
-    #             detector_name = curr_exp_run["detector_name"]
-    #             n_events = np.random.randint(1, curr_exp_run["num_events"]//20)
-    #             curr_round_end_idx = min(curr_exp_run["curr_event_idx"] + n_events, curr_exp_run["num_events"])
-    #             for event_idx in range(curr_exp_run["curr_event_idx"], curr_round_end_idx):
-    #                 event = curr_exp_run["events"][event_idx]
-    #                 yield (exp, run, PSANA_ACCESS_MODE, detector_name, event)
-    #             curr_exp_run["curr_event_idx"] = curr_round_end_idx
-    #             exp_run_ids.append(curr_exp_run_idx)
+        # Begin round robin schedule
+        while len(exp_run_ids) > 0:
+            # Randomly select the next experiment run to avoid cyclic patterns in data (could alternatively select determistically as LIFO queue)
+            curr_exp_run_idx = exp_run_ids.pop(np.random.randint(0, len(exp_run_ids)))
+            curr_exp_run = self.json_entry_list[curr_exp_run_idx]
+            if curr_exp_run["curr_event_idx"] < curr_exp_run["num_events"]:
+                # If current experiment run has unyielded events remaining, yield a random number of its events
+                exp = curr_exp_run["exp"]
+                run = curr_exp_run["run"]
+                detector_name = curr_exp_run["detector_name"]
+                n_events = np.random.randint(1, curr_exp_run["num_events"]//20)
+                curr_round_end_idx = min(curr_exp_run["curr_event_idx"] + n_events, curr_exp_run["num_events"])
+                for event_idx in range(curr_exp_run["curr_event_idx"], curr_round_end_idx):
+                    event = curr_exp_run["events"][event_idx]
+                    yield (exp, run, PSANA_ACCESS_MODE, detector_name, event)
+                curr_exp_run["curr_event_idx"] = curr_round_end_idx
+                exp_run_ids.append(curr_exp_run_idx)
 
     def calculate_end_idx(self):
         # Calculate and return the end index for the current dataset segment.
