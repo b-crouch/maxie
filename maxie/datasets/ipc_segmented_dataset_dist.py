@@ -101,11 +101,10 @@ class IPCDistributedSegmentedDataset(Dataset):
     def _init_entry_generator(self):
         if self.debug:
             logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Initializing entry generator.")
-       # Yield entries from input JSON, alternating between experiment runs in a round-robin fashion
+        # Yield entries from input JSON, alternating between experiment runs in a round-robin fashion
         PSANA_ACCESS_MODE = 'idx'
-        # Rough guideline for how many events from each experiment run to yield per round. Perhaps include as a config arg?
-        events_per_round = self.json_entry_list[0]["num_events"]//20 
         
+        # Store the most recently accessed event for each run
         for entry_idx, entry in enumerate(self.json_entry_list):
             entry["idx"] = entry_idx
             entry["curr_event_idx"] = 0
@@ -120,14 +119,15 @@ class IPCDistributedSegmentedDataset(Dataset):
         # Begin round robin schedule
         while len(exp_run_ids) > 0:
             # Randomly select the next experiment run to avoid cyclic patterns in data (could alternatively select determistically as LIFO queue)
-            curr_exp_run_idx = exp_run_ids.pop(np.random.choice(range(len(exp_run_ids))))
+            curr_exp_run_idx = exp_run_ids.pop(np.random.randint(0, len(exp_run_ids)))
             curr_exp_run = self.json_entry_list[curr_exp_run_idx]
             if curr_exp_run["curr_event_idx"] < curr_exp_run["num_events"]:
-                # If current experiment run has unyielded events remaining, yield its next `events_per_round` events
+                # If current experiment run has unyielded events remaining, yield a random number of its events
                 exp = curr_exp_run["exp"]
                 run = curr_exp_run["run"]
                 detector_name = curr_exp_run["detector_name"]
-                curr_round_end_idx = min(curr_exp_run["curr_event_idx"] + events_per_round, curr_exp_run["num_events"])
+                n_events = np.random.randint(1, curr_exp_run["num_events"]//20)
+                curr_round_end_idx = min(curr_exp_run["curr_event_idx"] + n_events, curr_exp_run["num_events"])
                 for event_idx in range(curr_exp_run["curr_event_idx"], curr_round_end_idx):
                     event = curr_exp_run["events"][event_idx]
                     yield (exp, run, PSANA_ACCESS_MODE, detector_name, event)
