@@ -23,6 +23,9 @@ from typing import Optional, List, Tuple
 from ..utils_fsdp import broadcast_dict
 from ..perf import Timer
 
+import logging
+logger = logging.getLogger(__name__)
+
 # ----------------------------------------------------------------------- #
 #  DATALOADER FOR TRAINING BY ALL RANKS
 # ----------------------------------------------------------------------- #
@@ -38,15 +41,17 @@ class IPCDistributedSegmentedDatasetConfig:
         is_perf (bool)               : Flag to enable performance timing for transformations. Default is False.
         server_address (str)         : URL of the server to fetch data from. Defaults to 'http://localhost:5001'.
         loads_segment_in_init (bool) : Whether to load the first segment in the init.
+        entry_per_cycle (int)        : Number of entries to go through in each experiment.
     """
     path_json             : str
     seg_size              : int
     world_size            : int
     transforms            : List
-    is_perf               : bool = False
+    is_perf               : bool  = False
     server_address        : Tuple = ('localhost', 5000)
-    loads_segment_in_init : bool = False
-    debug                 : bool = False
+    loads_segment_in_init : bool  = False
+    entry_per_cycle       : int   = 1
+    debug                 : bool  = False
 
 class IPCDistributedSegmentedDataset(Dataset):
     """A dataset class designed for fetching and distributing segments of data
@@ -56,14 +61,15 @@ class IPCDistributedSegmentedDataset(Dataset):
     distributed processes.
     """
     def __init__(self, config: IPCDistributedSegmentedDatasetConfig):
-        self.path_json             = config.path_json
-        self.seg_size              = config.seg_size
-        self.world_size            = config.world_size
-        self.server_address        = config.server_address
-        self.transforms            = config.transforms
-        self.is_perf               = config.is_perf
-        self.loads_segment_in_init = config.loads_segment_in_init
-        self.debug                 = config.debug
+        self.path_json              = config.path_json
+        self.seg_size               = config.seg_size
+        self.world_size             = config.world_size
+        self.server_address         = config.server_address
+        self.transforms             = config.transforms
+        self.is_perf                = config.is_perf
+        self.loads_segment_in_init  = config.loads_segment_in_init
+        self.entry_per_cycle        = config.entry_per_cycle
+        self.debug                  = config.debug
 
         self.json_entry_list = self._load_json()
         self.total_size      = self._get_total_size()
@@ -80,8 +86,12 @@ class IPCDistributedSegmentedDataset(Dataset):
         self.end_idx         = 0
         self.json_entry_gen  = None
         self.current_dataset = None
+        if self.debug:
+            logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Dataset reset done.")
 
     def _load_json(self):
+        if self.debug:
+            logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Loading json.")
         with open(self.path_json, 'r') as file:
             entry_list = json.load(file)
         return entry_list
@@ -90,8 +100,10 @@ class IPCDistributedSegmentedDataset(Dataset):
         return sum([entry['num_events'] if entry['events'] is None else len(entry['events']) for entry in self.json_entry_list]) # Use constants to represent the magic value
 
     def _init_entry_generator(self):
+        if self.debug:
+            logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Initializing entry generator.")
         PSANA_ACCESS_MODE = 'idx'
-        all_events = []
+        entry_gens = []
         for entry in self.json_entry_list:
             exp           = entry['exp'          ]
             run           = entry['run'          ]
@@ -100,12 +112,64 @@ class IPCDistributedSegmentedDataset(Dataset):
             num_events    = entry['num_events'   ]
             if events is None:
                 events = range(num_events)
-            for event in events:
-                all_events.append((exp, run, PSANA_ACCESS_MODE, detector_name, event))
-        # Randomize the order of events occurring across all runs of all experiments in dataset
-        random.shuffle(all_events)
-        for event_tuple in all_events:
-            yield event_tuple
+            entry_gen = self._entry_generator(exp, run, PSANA_ACCESS_MODE, detector_name, events)
+            entry_gens.append(entry_gen)
+
+        return self._round_robin_generator(entry_gens, self.entry_per_cycle)
+
+    def _entry_generator(self, exp, run, psana_access_mode, detector_name, events):
+        for event in events:
+            yield (exp, run, psana_access_mode, detector_name, event)
+
+    def _round_robin_generator(self, entry_gens, entry_per_cycle):
+        """
+        Go through up to certain number of examples for each exp and
+        then move on to the next exp. Then, repeat this cycle until all
+        generators have been exhausted.
+        """
+        while len(entry_gens):
+            for entry_gen in entry_gens:
+                for _ in range(entry_per_cycle):
+                    try:
+                        yield next(entry_gen)
+                    except StopIteration:
+                        entry_gens.remove(entry_gen)
+                        break
+    # def _init_entry_generator(self):
+    #     if self.debug:
+    #         logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Initializing entry generator.")
+    #     # Yield entries from input JSON, alternating between experiment runs in a round-robin fashion
+    #     PSANA_ACCESS_MODE = 'idx'
+        
+    #     # Store the most recently accessed event for each run
+    #     for entry_idx, entry in enumerate(self.json_entry_list):
+    #         entry["idx"] = entry_idx
+    #         entry["curr_event_idx"] = 0
+    #         if entry["events"] is None:
+    #             entry["events"] = range(entry["num_events"])
+    #         elif len(entry["events"]) != entry["num_events"]:
+    #             # Some experiment runs have fewer recorded events than documented
+    #             entry["num_events"] = len(entry["events"])
+    #     # Store a unique identifier for each experiment run
+    #     exp_run_ids = list(range(len(self.json_entry_list)))
+        
+    #     # Begin round robin schedule
+    #     while len(exp_run_ids) > 0:
+    #         # Randomly select the next experiment run to avoid cyclic patterns in data (could alternatively select determistically as LIFO queue)
+    #         curr_exp_run_idx = exp_run_ids.pop(np.random.randint(0, len(exp_run_ids)))
+    #         curr_exp_run = self.json_entry_list[curr_exp_run_idx]
+    #         if curr_exp_run["curr_event_idx"] < curr_exp_run["num_events"]:
+    #             # If current experiment run has unyielded events remaining, yield a random number of its events
+    #             exp = curr_exp_run["exp"]
+    #             run = curr_exp_run["run"]
+    #             detector_name = curr_exp_run["detector_name"]
+    #             n_events = np.random.randint(1, curr_exp_run["num_events"]//20)
+    #             curr_round_end_idx = min(curr_exp_run["curr_event_idx"] + n_events, curr_exp_run["num_events"])
+    #             for event_idx in range(curr_exp_run["curr_event_idx"], curr_round_end_idx):
+    #                 event = curr_exp_run["events"][event_idx]
+    #                 yield (exp, run, PSANA_ACCESS_MODE, detector_name, event)
+    #             curr_exp_run["curr_event_idx"] = curr_round_end_idx
+    #             exp_run_ids.append(curr_exp_run_idx)
 
     def calculate_end_idx(self):
         # Calculate and return the end index for the current dataset segment.
@@ -116,10 +180,14 @@ class IPCDistributedSegmentedDataset(Dataset):
         return ceil(self.total_size / (self.seg_size * self.world_size))
 
     def update_dataset_segment(self):
+        if self.debug:
+            logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Updating segment to {self.start_idx}-{self.end_idx}.")
         # Trick islice to return a subset of events at a time
         return list(islice(self.json_entry_gen, 0, self.end_idx - self.start_idx))
 
     def set_start_idx(self, start_idx):
+        if self.debug:
+            logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] Setting start idx to {start_idx}.")
         self.start_idx = start_idx
         self.end_idx   = self.calculate_end_idx()
 
@@ -147,7 +215,7 @@ class IPCDistributedSegmentedDataset(Dataset):
 
         # [DEBUG]
         if self.debug:
-            print(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] exp={exp}, run={run}, detector_name={detector_name}, event={event}.")
+            logger.debug(f"[RANK {dist.get_rank() if dist.is_initialized() else 0}] exp={exp}, run={run}, detector_name={detector_name}, event={event}.")
 
         # Apply transforms
         image_tensor = None
@@ -214,28 +282,32 @@ class IPCDistributedSegmentedDataset(Dataset):
                 # Load the reponse data
                 response_json = json.loads(response_data)
 
-                # Use the JSON data to access the shared memory
-                shm_name = response_json['name']
-                shape    = response_json['shape']
-                dtype    = np.dtype(response_json['dtype'])
+                if 'error' in response_json:
+                    logger.debug(f"Server error: {response_json['error']}")
+                    if response_json['traceback'] is not None: logger.debug(response_json['traceback'])
+                else:
+                    # Use the JSON data to access the shared memory
+                    shm_name = response_json['name']
+                    shape    = response_json['shape']
+                    dtype    = np.dtype(response_json['dtype'])
 
-                # Initialize shared memory outside of try block to ensure it's in scope for finally block
-                shm = None
-                try:
-                    # Access the shared memory
-                    shm = shared_memory.SharedMemory(name=shm_name)
-                    data_array = np.ndarray(shape, dtype=dtype, buffer=shm.buf)
+                    # Initialize shared memory outside of try block to ensure it's in scope for finally block
+                    shm = None
+                    try:
+                        # Access the shared memory
+                        shm = shared_memory.SharedMemory(name=shm_name)
+                        data_array = np.ndarray(shape, dtype=dtype, buffer=shm.buf)
 
-                    # Convert to numpy array (this creates a copy of the data)
-                    result = np.array(data_array)
-                finally:
-                    # Ensure shared memory is closed even if an exception occurs
-                    if shm:
-                        shm.close()
-                        shm.unlink()
+                        # Convert to numpy array (this creates a copy of the data)
+                        result = np.array(data_array)
+                    finally:
+                        # Ensure shared memory is closed even if an exception occurs
+                        if shm:
+                            shm.close()
+                            shm.unlink()
 
-            # Send acknowledgment after successfully accessing shared memory
-            sock.sendall("ACK".encode('utf-8'))
+                # Send acknowledgment after successfully accessing shared memory
+                sock.sendall("ACK".encode('utf-8'))
 
             return result
 
