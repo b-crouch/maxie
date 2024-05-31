@@ -47,6 +47,7 @@ misc:
 model:
   name: 'facebook/vit-mae-base'
 predictions:
+  job_name : my_job
   save_filepath : predictions/outputs
   save_tensor : true
   save_img : true

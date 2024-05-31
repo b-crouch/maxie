@@ -151,6 +151,7 @@ data_dump_on         = misc_config.get("data_dump_on", False)
 
 # -- Saving
 save_filepath = config.get("predictions").get("save_filepath")
+job_name = config.get("predictions").get("job_name")
 save_tensor = config.get("predictions").get("save_tensor")
 save_img = config.get("predictions").get("save_img")
 
@@ -255,7 +256,7 @@ backward_prefetch = BackwardPrefetch.BACKWARD_PRE
 timestamp = None
 if dist_rank == 0:
     # Fetch the current timestamp...
-    timestamp = init_logger(fl_prefix = fl_log_prefix, drc_log = drc_log, returns_timestamp = True)
+    timestamp = init_logger(fl_prefix = fl_log_prefix, drc_log = drc_log)
 
     # Convert dictionary to yaml formatted string...
     config_yaml = yaml.dump(config)
@@ -433,15 +434,16 @@ for i, tensor in enumerate(dataloader):
         mask = model.unpatchify(mask)
         mask = torch.einsum('nchw->nhwc', mask).detach().cpu()
         
+        parent_directory = os.path.join(save_filepath, job_name)
         if save_tensor:
-            path_raw_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_raw_image.pt")
+            path_raw_save = os.path.join(parent_directory, f"{exp}_r{run}_e{event}_raw_image.pt")
             torch.save(raw_image, path_raw_save)
-            path_generated_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_gen_image.pt") 
+            path_generated_save = os.path.join(parent_directory, f"{exp}_r{run}_e{event}_gen_image.pt") 
             torch.save(generated_image, path_generated_save)
-            path_mask_save = os.path.join(save_filepath, f"{exp}_r{run}_e{event}_mask.pt") 
+            path_mask_save = os.path.join(parent_directory, f"{exp}_r{run}_e{event}_mask.pt") 
             torch.save(mask, path_mask_save)
         if save_img:
-            save_img(raw_image.squeeze(-1), filename=f"{exp}_r{run}_e{event}_raw_image", filepath=save_filepath)
-            save_img(generated_image.squeeze(-1), filename=f"{exp}_r{run}_e{event}_gen_image", filepath=save_filepath)
-            save_img(raw_image.squeeze(-1), mask=mask.squeeze(-1), filename=f"{exp}_r{run}_e{event}_mask", filepath=save_filepath)
+            save_img(raw_image.squeeze(-1), filename=f"{exp}_r{run}_e{event}_raw_image", filepath=parent_directory)
+            save_img(generated_image.squeeze(-1), filename=f"{exp}_r{run}_e{event}_gen_image", filepath=parent_directory)
+            save_img(raw_image.squeeze(-1), mask=mask.squeeze(-1), filename=f"{exp}_r{run}_e{event}_mask", filepath=parent_directory)
         
