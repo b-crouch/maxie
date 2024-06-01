@@ -391,8 +391,8 @@ def save_img(patches, filename="image", filepath="./", mask=None):
             idx = col + ncols * row
             ax = ax_list[idx]
             data_viz = patches[idx]
-            normalized_viz = (data_viz - torch.mean(data_viz))/torch.std(data_viz)
-            ax.imshow(normalized_viz, vmin = 0, vmax = 4) # Scaling factor chosen heuristically
+            normalized_viz = (data_viz - torch.mean(patches))/torch.std(patches)
+            ax.imshow(normalized_viz, vmin = 0, vmax = 1.5) # Scaling factor chosen heuristically
             if mask is not None:
                 ax.imshow(mask[idx], cmap=matplotlib.colors.ListedColormap(['none', 'gray']))
 
@@ -435,6 +435,8 @@ for i, tensor in enumerate(dataloader):
         mask = torch.einsum('nchw->nhwc', mask).detach().cpu()
         
         parent_directory = os.path.join(save_filepath, job_name)
+        if not os.path.exists(parent_directory):
+            os.makedirs(parent_directory)
         if save_tensor:
             path_raw_save = os.path.join(parent_directory, f"{exp}_r{run}_e{event}_raw_image.pt")
             torch.save(raw_image, path_raw_save)
